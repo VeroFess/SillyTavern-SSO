@@ -1267,8 +1267,31 @@ export async function createOidcUser(claims) {
     // Ensure user directories exist
     const directories = getUserDirectories(userId);
     for (const dir of Object.values(directories)) {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+        try {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+                if (config.debug) {
+                    console.log(`Created directory: ${dir}`);
+                }
+            }
+        } catch (error) {
+            console.error(`Failed to create directory ${dir}:`, error.message);
+        }
+    }
+
+    // Create default settings file if it doesn't exist
+    const settingsPath = path.join(directories.root, 'settings.json');
+    if (!fs.existsSync(settingsPath)) {
+        try {
+            const defaultSettingsPath = path.join(process.cwd(), 'default', 'content', 'settings.json');
+            if (fs.existsSync(defaultSettingsPath)) {
+                fs.copyFileSync(defaultSettingsPath, settingsPath);
+                if (config.debug) {
+                    console.log(`Created default settings file for OIDC user: ${settingsPath}`);
+                }
+            }
+        } catch (error) {
+            console.error(`Failed to create settings file for OIDC user ${userId}:`, error.message);
         }
     }
 

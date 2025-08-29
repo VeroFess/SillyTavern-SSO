@@ -52,7 +52,29 @@ router.get('/callback', async (request, response) => {
         const config = getOidcConfig();
 
         if (config.debug) {
-            console.log('OIDC callback received:', request.query);
+            console.log('OIDC callback received:', {
+                query: request.query,
+                headers: Object.fromEntries(
+                    Object.entries(request.headers).filter(([key]) =>
+                        !['authorization', 'cookie'].includes(key.toLowerCase()),
+                    ),
+                ),
+                url: request.originalUrl,
+            });
+        }
+
+        // Check for authorization errors first
+        if (request.query.error) {
+            const errorMsg = `OIDC Authorization Error: ${request.query.error} - ${request.query.error_description || 'No description provided'}`;
+            console.error(color.red(errorMsg));
+            return response.status(400).send(`Authentication failed: ${request.query.error_description || request.query.error}`);
+        }
+
+        // Check for authorization code
+        if (!request.query.code) {
+            const errorMsg = 'OIDC callback missing authorization code';
+            console.error(color.red(errorMsg));
+            return response.status(400).send('Authentication failed: Missing authorization code');
         }
 
         // Handle authorization code exchange
@@ -99,11 +121,8 @@ router.get('/callback', async (request, response) => {
 
         // Clear any partial session data
         if (request.session) {
-            request.session.destroy((err) => {
-                if (err) {
-                    console.error('Failed to destroy session:', err);
-                }
-            });
+            // For cookie-session, set to null to clear the session
+            request.session = null;
         }
 
         return response.status(500).send('Authentication failed: ' + error.message);
@@ -136,11 +155,8 @@ router.post('/logout', async (request, response) => {
 
         // Clear the session
         if (request.session) {
-            request.session.destroy((error) => {
-                if (error) {
-                    console.error('Failed to destroy session during logout:', error);
-                }
-            });
+            // For cookie-session, set to null to clear the session
+            request.session = null;
         }
 
         console.log('User logged out via OIDC');
@@ -153,11 +169,8 @@ router.post('/logout', async (request, response) => {
 
         // Ensure session is cleared even if logout fails
         if (request.session) {
-            request.session.destroy((err) => {
-                if (err) {
-                    console.error('Failed to destroy session:', err);
-                }
-            });
+            // For cookie-session, set to null to clear the session
+            request.session = null;
         }
 
         return response.redirect('/');

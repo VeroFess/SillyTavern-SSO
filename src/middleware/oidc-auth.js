@@ -148,7 +148,12 @@ export async function handleOidcCallback(request) {
     const config = getOidcConfig();
 
     if (config.debug) {
-        console.log('OIDC callback received:', request.query);
+        console.log('Processing OIDC callback:', {
+            query: request.query,
+            sessionState: request.session?.oidc_state ? '[PRESENT]' : '[MISSING]',
+            sessionNonce: request.session?.oidc_nonce ? '[PRESENT]' : '[MISSING]',
+            url: request.originalUrl,
+        });
     }
 
     // Validate state parameter for CSRF protection
@@ -156,38 +161,78 @@ export async function handleOidcCallback(request) {
         throw new Error('Session not available for OIDC state validation');
     }
 
+    if (!request.session.oidc_state) {
+        throw new Error('Missing OIDC state in session - authentication session may have expired');
+    }
+
     if (request.query.state !== request.session.oidc_state) {
         throw new Error('Invalid state parameter - possible CSRF attack');
     }
 
     // Create URL from request for openid-client
-    const callbackUrl = new URL(request.originalUrl, `${request.protocol}://${request.get('host')}`);
+    // Use the configured redirectUri as base and add query parameters from the actual request
+    const callbackUrl = new URL(config.provider.redirectUri);
 
-    // Exchange authorization code for tokens
-    const tokenSet = await client.authorizationCodeGrant(
-        oidcConfig,
-        callbackUrl,
-        {
-            expectedState: request.session.oidc_state,
-            expectedNonce: request.session.oidc_nonce,
-        },
-    );
-
-    // Clean up session data
-    if (request.session) {
-        delete request.session.oidc_state;
-        delete request.session.oidc_nonce;
+    // Add query parameters from the actual callback request
+    const requestUrl = new URL(request.originalUrl, `${request.protocol}://${request.get('host')}`);
+    for (const [key, value] of requestUrl.searchParams) {
+        callbackUrl.searchParams.set(key, value);
     }
 
     if (config.debug) {
-        console.log('OIDC tokens received:', {
-            access_token: tokenSet.access_token ? '[PRESENT]' : '[MISSING]',
-            id_token: tokenSet.id_token ? '[PRESENT]' : '[MISSING]',
-            refresh_token: tokenSet.refresh_token ? '[PRESENT]' : '[MISSING]',
+        console.log('Attempting token exchange with:', {
+            callbackUrl: callbackUrl.toString(),
+            configuredRedirectUri: config.provider.redirectUri,
+            requestUrl: request.originalUrl,
+            hasAuthCode: !!request.query.code,
         });
     }
 
-    return tokenSet;
+    // Exchange authorization code for tokens
+    try {
+        const tokenSet = await client.authorizationCodeGrant(
+            oidcConfig,
+            callbackUrl,
+            {
+                expectedState: request.session.oidc_state,
+                expectedNonce: request.session.oidc_nonce,
+            },
+        );
+
+        if (config.debug) {
+            console.log('Token exchange successful');
+        }
+
+        // Clean up session data
+        if (request.session) {
+            delete request.session.oidc_state;
+            delete request.session.oidc_nonce;
+        }
+
+        if (config.debug) {
+            console.log('OIDC tokens received:', {
+                access_token: tokenSet.access_token ? '[PRESENT]' : '[MISSING]',
+                id_token: tokenSet.id_token ? '[PRESENT]' : '[MISSING]',
+                refresh_token: tokenSet.refresh_token ? '[PRESENT]' : '[MISSING]',
+            });
+        }
+
+        return tokenSet;
+    } catch (error) {
+        // Enhanced error logging for token exchange failures
+        console.error(color.red('OIDC token exchange failed:'), {
+            message: error.message,
+            code: error.code || 'UNKNOWN',
+            status: error.status || 'UNKNOWN',
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: typeof error.response.data === 'string' ? error.response.data.substring(0, 500) : error.response.data,
+            } : 'NO_RESPONSE',
+        });
+
+        throw new Error(`Token exchange failed: ${error.message}`);
+    }
 }
 
 /**

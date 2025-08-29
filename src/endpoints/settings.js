@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 import express from 'express';
 import _ from 'lodash';
@@ -46,10 +47,21 @@ function triggerAutoSave(handle) {
  * @returns {Array} Parsed files
  */
 function readAndParseFromDirectory(directoryPath, fileExtension = '.json') {
-    const files = fs
-        .readdirSync(directoryPath)
-        .filter(x => path.parse(x).ext == fileExtension)
-        .sort();
+    // Check if directory exists, return empty array if not
+    if (!fs.existsSync(directoryPath)) {
+        return [];
+    }
+
+    let files;
+    try {
+        files = fs
+            .readdirSync(directoryPath)
+            .filter(x => path.parse(x).ext == fileExtension)
+            .sort();
+    } catch (error) {
+        console.warn(`Error reading directory ${directoryPath}:`, error.message);
+        return [];
+    }
 
     const parsedFiles = [];
 
@@ -91,7 +103,19 @@ function readPresetsFromDirectory(directoryPath, options = {}) {
         fileExtension = '.json',
     } = options;
 
-    const files = fs.readdirSync(directoryPath).sort(sortFunction).filter(x => path.parse(x).ext == fileExtension);
+    // Check if directory exists, return empty arrays if not
+    if (!fs.existsSync(directoryPath)) {
+        return { fileContents: [], fileNames: [] };
+    }
+
+    let files;
+    try {
+        files = fs.readdirSync(directoryPath).sort(sortFunction).filter(x => path.parse(x).ext == fileExtension);
+    } catch (error) {
+        console.warn(`Error reading directory ${directoryPath}:`, error.message);
+        return { fileContents: [], fileNames: [] };
+    }
+
     const fileContents = [];
     const fileNames = [];
 
@@ -215,9 +239,40 @@ router.post('/get', (request, response) => {
     let settings;
     try {
         const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
+
+        // Check if settings file exists, create default if not
+        if (!fs.existsSync(pathToSettings)) {
+            console.log(`Creating default settings file for user: ${request.user.profile.handle}`);
+
+            // Try to copy from default template
+            const defaultSettingsPath = path.join(process.cwd(), 'default', 'content', 'settings.json');
+            if (fs.existsSync(defaultSettingsPath)) {
+                fs.copyFileSync(defaultSettingsPath, pathToSettings);
+            } else {
+                // Fallback to minimal default settings if template doesn't exist
+                const defaultSettings = {
+                    'firstRun': true,
+                    'username': request.user.profile.name || 'User',
+                    'main_api': 'openai',
+                    'amount_gen': 350,
+                    'max_context': 8192,
+                };
+                writeFileAtomicSync(pathToSettings, JSON.stringify(defaultSettings, null, 4), 'utf8');
+            }
+        }
+
         settings = fs.readFileSync(pathToSettings, 'utf8');
     } catch (e) {
-        return response.sendStatus(500);
+        console.error('Error reading settings file:', e);
+        // Return minimal default settings instead of 500 error
+        const fallbackSettings = {
+            'firstRun': true,
+            'username': request.user?.profile?.name || 'User',
+            'main_api': 'openai',
+            'amount_gen': 350,
+            'max_context': 8192,
+        };
+        settings = JSON.stringify(fallbackSettings, null, 4);
     }
 
     // NovelAI Settings
@@ -245,11 +300,21 @@ router.post('/get', (request, response) => {
             sortFunction: sortByName(request.user.directories.koboldAI_Settings), removeFileExtension: true,
         });
 
-    const worldFiles = fs
-        .readdirSync(request.user.directories.worlds)
-        .filter(file => path.extname(file).toLowerCase() === '.json')
-        .sort((a, b) => a.localeCompare(b));
-    const world_names = worldFiles.map(item => path.parse(item).name);
+    let worldFiles = [];
+    let world_names = [];
+    try {
+        if (fs.existsSync(request.user.directories.worlds)) {
+            worldFiles = fs
+                .readdirSync(request.user.directories.worlds)
+                .filter(file => path.extname(file).toLowerCase() === '.json')
+                .sort((a, b) => a.localeCompare(b));
+            world_names = worldFiles.map(item => path.parse(item).name);
+        }
+    } catch (error) {
+        console.warn('Error reading worlds directory:', error.message);
+        worldFiles = [];
+        world_names = [];
+    }
 
     const themes = readAndParseFromDirectory(request.user.directories.themes);
     const movingUIPresets = readAndParseFromDirectory(request.user.directories.movingUI);
