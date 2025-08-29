@@ -15,6 +15,43 @@ English | [German](readme-de_de.md) | [中文](readme-zh_cn.md) | [繁體中文]
 
 ---
 
+## ⚠️ Unofficial SSO Branch
+
+**This is an unofficial branch that implements SSO login. The reason I haven't tried to merge it is because I still haven't worked out some details.**
+
+### What This Branch Adds
+
+This branch implements **OpenID Connect (OIDC) Single Sign-On** authentication with the following features:
+
+- **OIDC/SSO Authentication**: Full OpenID Connect support
+- **Automatic User Creation**: Users are created automatically from OIDC claims on first login
+- **Admin Role Mapping**: Admin privileges mapped from OIDC claims (configurable)
+- **Security Policies**: Option to automatically disable non-SSO users for pure SSO environments
+- **Session Management**: Proper token handling and session lifecycle
+- **Multi-User Mode**: Forces user accounts when SSO is enabled
+- **Password Restrictions**: OIDC users cannot change passwords (managed externally)
+
+### Configuration
+
+Enable SSO by configuring the `oidc` section in `config.yaml`:
+
+```yaml
+oidc:
+  enabled: true
+  debug: false
+  provider:
+    issuer: "https://your-sso-provider.com"
+    clientId: "your-client-id"
+    clientSecret: "your-client-secret"
+    redirectUri: "http://localhost:8000/auth/oidc/callback"
+  ui:
+    loginButtonText: "Sign in with SSO"
+  security:
+    disableNonOidcUsers: true  # Optional: disable all non-SSO users
+```
+
+---
+
 SillyTavern provides a single unified interface for many LLM APIs (KoboldAI/CPP, Horde, NovelAI, Ooba, Tabby, OpenAI, OpenRouter, Claude, Mistral and more), a mobile-friendly layout, Visual Novel Mode, Automatic1111 & ComfyUI API image generation integration, TTS, WorldInfo (lorebooks), customizable UI, auto-translate, more prompt options than you'd ever want or need, and endless growth potential via third-party extensions.
 
 We have a [Documentation website](https://docs.sillytavern.app/) to answer most of your questions and help you get started.
