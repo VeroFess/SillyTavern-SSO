@@ -1,3 +1,5 @@
+import { initAccessibility } from './a11y.js';
+
 /**
  * CRSF token for requests.
  */
@@ -307,6 +309,8 @@ function configureDiscreetLogin() {
 }
 
 (async function () {
+    initAccessibility();
+
     csrfToken = await getCsrfToken();
     oidcConfig = await getOidcConfig();
 
